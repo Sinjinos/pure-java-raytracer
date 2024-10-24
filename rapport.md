@@ -13,3 +13,30 @@ La boucle sur x : Elle parcourt chaque colonne de pixels de gauche à droite.
 La boucle sur y : Elle parcourt chaque ligne de pixels de haut en bas.
 
 À chaque itération des deux boucles, la fonction calcule les coordonnées de l’écran avec getNormalizedScreenCoordinates, puis elle trace un rayon vers la scène, avec computePixelInfo et enfin détermine la couleur du pixel.
+
+Question 4. Quel problème se pose dans l’accès à la variable nouvellement partagé “gfx” ? 
+Le problème principal concerne l'accès concurrent à l'objet Graphics, gfx.
+Comme on a plusieurs threads qui tentent de dessiner sur l'objet gfx en même temps dans la méthode renderScene2, cela créer des problèmes.
+
+Comment l’avez vous résolu ?
+Pour corriger ce problème, la solution consiste à synchroniser l'accès à l'objet gfx.
+synchronized (gfx) {
+    gfx.setColor(pixelData.getColor().toAWTColor());
+    gfx.fillRect(xFinal, yFinal, blockSize, blockSize);
+}
+
+Question 5 :  Quel est le problème posé par le nombre de threads engendrés ? 
+
+- La surcharge du CPU : Plus la résolution est élevée, plus le nombre de threads augmente et donc cela peut créer des milliers, voire des millions de threads.
+A la fin, cela surchage le cpu.
+- Excès de Mémoire :  Chaque thread occupe une certaine quantité de mémoire. 
+
+Comparaison :
+
+Résolution = 0,05f.
+- Temps pris sans thread : Rendered in ~7ms
+- Temps pris avec un thread par pixel : Rendered in ~945ms 
+- Temps pris avec un thread par ligne : Rendered in ~25ms
+
+Donc, c'est le sans thread qui est le plus rapide.
+
