@@ -10,13 +10,21 @@ import carlvbn.raytracing.solids.Solid;
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 public class Renderer {
     private static final float GLOBAL_ILLUMINATION = 0.3F;
     private static final float SKY_EMISSION = 0.5F;
     private static final int MAX_REFLECTION_BOUNCES = 5;
     private static final boolean SHOW_SKYBOX = true;
+    private static ThreadPool threadP;
+
+    //Initialise le pool
+    static {
+        initThreadPool(20, 5); //20 threads, file de taille 5
+    }
 
     public static float bloomIntensity = 0.5F;
     public static int bloomRadius = 10;
@@ -84,11 +92,14 @@ public class Renderer {
      * @param height The height of the desired output
      * @param resolution (Floating point greater than 0 and lower or equal to 1) Controls the number of rays traced. (1 = Every pixel is ray-traced)
      */
-    public static void renderScene(Scene scene, Graphics gfx, int width, int height, float resolution) {
+    public static void renderScene4(Scene scene, Graphics gfx, int width, int height, float resolution) {
+        //Limiter la résolution à 0.05f
+        if (resolution > 0.05f)
+            resolution = 0.05f;
+
         int blockSize = (int) (1 / resolution);
         long start = System.currentTimeMillis();
 
-        
         for (int x = 0; x<width; x+=blockSize) {
             for (int y = 0; y<height; y+=blockSize) {
                 float[] uv = getNormalizedScreenCoordinates(x, y, width, height);
@@ -101,6 +112,146 @@ public class Renderer {
 
         System.out.println("Rendered in " + (System.currentTimeMillis() - start) + "ms");
     }
+
+    //Threads multiple : un par pixel.
+    public static void renderScene2(Scene scene, Graphics gfx, int width, int height, float resolution) {
+        //Limiter la résolution à 0.05f
+        if (resolution > 0.05f) 
+            resolution = 0.05f;
+        
+        int blockSize = (int) (1 / resolution);
+        long start = System.currentTimeMillis();
+        
+        //Liste pour stocker les threads
+        List<Thread> threads = new ArrayList<>();
+
+        for (int x = 0; x<width; x+=blockSize) {
+            for (int y = 0; y<height; y+=blockSize) {
+
+                //Variables finales, à cause de l'appel à de multiple threads.
+                final int xFinal = x;
+                final int yFinal = y;
+                
+
+                //Créer un Runnable pour chaque pixel
+                Runnable renderT = () -> {
+                    System.out.println("Pixel (" +xFinal+ ", " +yFinal+ ")");
+                    float[] uv = getNormalizedScreenCoordinates(xFinal, yFinal, width, height);
+                    PixelData pixelData = computePixelInfo(scene, uv[0], uv[1]);
+
+                    //Un threads à la fois pour gfx.
+                    synchronized (gfx) {
+                        gfx.setColor(pixelData.getColor().toAWTColor());
+                        gfx.fillRect(xFinal, yFinal, blockSize, blockSize);
+                    }
+                };
+
+                //Crée un thread pour chaque tâche et le démarre.
+                Thread thread = new Thread(renderT);
+                threads.add(thread);
+                thread.start();
+            }
+        }
+
+        //Attend que tous les threads soient terminés.
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println("Rendered in " + (System.currentTimeMillis() - start) + "ms");
+    }
+
+    //Threads multiple : un par colonne.
+    public static void renderScene3(Scene scene, Graphics gfx, int width, int height, float resolution) {
+        //Limiter la résolution à 0.05f
+        if (resolution > 0.05f)
+            resolution = 0.05f;
+        
+        int blockSize = (int) (1 / resolution);
+        long start = System.currentTimeMillis();
+     
+        //Liste pour stocker les threads
+        List<Thread> threads = new ArrayList<>();
+
+        for (int x = 0; x<width; x+=blockSize) {
+            
+            //Variables finales, à cause de l'appel à de multiple threads.
+            final int xFinal = x;
+
+            //Créer un Runnable pour chaque pixel
+            Runnable renderT = () -> {
+                for (int y = 0; y<height; y+=blockSize) {
+                    //System.out.println("Pixel (" +xFinal+ ", " +y+ ")");
+                    float[] uv = getNormalizedScreenCoordinates(xFinal, y, width, height);
+                    PixelData pixelData = computePixelInfo(scene, uv[0], uv[1]);
+
+                    //Un threads à la fois pour gfx.
+                    synchronized (gfx) {
+                        gfx.setColor(pixelData.getColor().toAWTColor());
+                        gfx.fillRect(xFinal, y, blockSize, blockSize);
+                    }
+                }
+            };
+
+            //Crée un thread pour chaque tâche et le démarre.
+            Thread thread = new Thread(renderT);
+            threads.add(thread);
+            thread.start();
+        }
+
+        //Attend que tous les threads soient terminés.
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println("Rendered in " + (System.currentTimeMillis() - start) + "ms");
+    }
+
+    
+    public static void renderScene(Scene scene, Graphics gfx, int width, int height, float resolution) {
+        
+        //Limiter la résolution à 0.05f
+        if (resolution > 0.05f)
+            resolution = 0.05f;
+
+        int blockSize = (int)(1 / resolution);
+        long start = System.currentTimeMillis();
+
+        for (int x = 0; x<width; x+=blockSize) {
+            //Variables finales, à cause de l'appel à de multiple threads.
+            final int xFinal = x;
+
+            //Soumet chaque colonne dans le pool de threads
+            Runnable renderT = () -> {
+                for (int y = 0; y<height; y+=blockSize) {
+                    float[] uv = getNormalizedScreenCoordinates(xFinal, y, width, height);
+                    PixelData pixelData = computePixelInfo(scene, uv[0], uv[1]);
+
+                    synchronized (gfx) {
+                        gfx.setColor(pixelData.getColor().toAWTColor());
+                        gfx.fillRect(xFinal, y, blockSize, blockSize);
+                    }
+                }
+            };
+
+            try {
+                threadP.submit(renderT);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        System.out.println("Rendered in " + (System.currentTimeMillis() - start) + "ms");
+    }
+
 
     /** Same as the above but applies Post-Processing effects before drawing. */
     public static void renderScenePostProcessed(Scene scene, Graphics gfx, int width, int height, float resolution) {
@@ -206,4 +357,12 @@ public class Renderer {
         float specularFactor = Math.max(0, Math.min(1, Vector3.dot(lightReflectionVector, cameraDirection)));
         return (float) Math.pow(specularFactor, 2)*hit.getSolid().getReflectivity();
     }
+
+    //Méthode pour initialiser le thread pool avec une taille donnée
+    public static void initThreadPool(int numT, int queueSize) {
+        if(threadP == null) 
+            threadP = new ThreadPool(numT, queueSize);
+    }
+
 }
+
